@@ -6,6 +6,18 @@ extern crate capsules;
 #[macro_use(debug, static_init)]
 extern crate kernel;
 extern crate sam4l;
+extern crate crypto;
+extern crate frodo;
+extern crate cycle_counter;
+
+use frodo::round;
+use frodo::cross;
+use frodo::greater_than;
+use frodo::rec;
+
+use frodo::alice_part1;
+use frodo::alice_part2;
+use frodo::bob_part;
 
 use capsules::rf233::RF233;
 use capsules::timer::TimerDriver;
@@ -28,6 +40,93 @@ pub mod io;
 mod i2c_dummy;
 #[allow(dead_code)]
 mod spi_dummy;
+
+///////////////////////////////////////////////
+//pub  fn round ( input:&u16) -> u16{
+//    return (((input+1024)%32768)>>B_bar);
+//}
+
+const B:u16=4;
+const B_bar:u16=11;
+const two_pow_B:u16=16;
+const two_pow_B_bar:u16=2048;
+const q:u16=32768;
+
+const n:u16=752;
+const m:u16=8;
+
+const n_bar:u16=8;
+const m_bar:u16=8;
+////////////////////////////
+
+
+
+pub fn test_frodo () {
+    pub static mut b: &'static mut[[u16; 8]; 752] = &mut [[0; 8]; 752];
+    pub static mut bp: &'static mut[[u16; 752]; 8] = &mut [[0; 752]; 8];
+    pub static mut c: &'static mut[[u16; 8]; 8] = &mut [[0; 8]; 8];
+    pub static mut k_bob: &'static mut[[u16; 8]; 8] = &mut [[0; 8]; 8];
+    pub static mut k_alice: &'static mut[[u16; 8]; 8] = &mut [[0; 8]; 8];
+    
+    let alice_p1:u8 = 0;
+    let alice_p2:u8 = 0;
+    let bob:u8 = 1;
+    
+    if alice_p1 == 1 {
+        unsafe {
+            alice_part1(&mut b);
+        
+            println!("The matrix b is--------------------");
+            for i in 0..m {
+                for j in 0..m {
+                    print!("{}, ",b[i as usize][j as usize]);
+                }
+                println!(" ");
+            }
+        }
+        
+    }
+    
+    if alice_p2 == 1 {
+        unsafe {
+            alice_part2(&mut bp,&mut c, &mut k_alice);
+            
+            println!("The matrix k_alice is--------------------");
+            for i in 0..m {
+                for j in 0..m {
+                    print!("{}, ",k_alice[i as usize][j as usize]);
+                }
+                println!(" ");
+            }
+        }
+    }
+    
+    
+    
+    if bob == 1 {
+        unsafe {
+            bob_part(&mut bp ,&mut c,&mut k_bob,&mut b);
+            
+            println!("The matrix k_bob is--------------------");
+            for i in 0..m {
+                for j in 0..m {
+                    print!("{}, ",k_bob[i as usize][j as usize]);
+                }
+                println!(" ");
+            }
+        }
+    }
+    
+    
+    
+    
+    
+    
+    
+    
+    
+}
+/////////////////////////////////////////////////////////
 
 struct Imix {
     console: &'static capsules::console::Console<'static, sam4l::usart::USART>,
@@ -100,8 +199,8 @@ unsafe fn set_pin_primary_functions() {
 
     // Right column: Imix pin name
     // Left  column: SAM4L peripheral function
-    PA[04].configure(Some(C)); // LI_INT      --  EIC EXTINT2
-    PA[05].configure(Some(A)); // AD0         --  ADCIFE AD1
+    PA[04].configure(Some(A)); // AD0         --  ADCIFE AD0
+    PA[05].configure(Some(A)); // AD1         --  ADCIFE AD1
     PA[06].configure(Some(C)); // EXTINT1     --  EIC EXTINT1
     PA[07].configure(Some(A)); // AD1         --  ADCIFE AD2
     PA[08].configure(None); //... RF233 IRQ   --  GPIO pin
@@ -111,16 +210,17 @@ unsafe fn set_pin_primary_functions() {
     PA[14].configure(None); //... TRNG_OUT    --  GPIO pin
     PA[17].configure(None); //... NRF INT     -- GPIO pin
     PA[18].configure(Some(A)); // NRF CLK     -- USART2_CLK
+    PA[20].configure(None);    // D8          -- GPIO pin
     PA[21].configure(Some(E)); // TWI2 SDA    -- TWIM2_SDA
     PA[22].configure(Some(E)); // TWI2 SCL    --  TWIM2 TWCK
     PA[25].configure(Some(A)); // USB_N       --  USB DM
     PA[26].configure(Some(A)); // USB_P       --  USB DP
     PB[00].configure(Some(A)); // TWI1_SDA    --  TWIMS1 TWD
     PB[01].configure(Some(A)); // TWI1_SCL    --  TWIMS1 TWCK
-    PB[02].configure(Some(A)); // AD2         --  ADCIFE AD3
-    PB[03].configure(Some(A)); // AD3         --  ADCIFE AD4
-    PB[04].configure(Some(A)); // AD4         --  ADCIFE AD5
-    PB[05].configure(Some(A)); // AD5         --  ADCIFE AD6
+    PB[02].configure(Some(A)); // AD3         --  ADCIFE AD3
+    PB[03].configure(Some(A)); // AD4         --  ADCIFE AD4
+    PB[04].configure(Some(A)); // AD5         --  ADCIFE AD5
+    PB[05].configure(Some(A)); // VHIGHSAMPLE --  ADCIFE AD6
     PB[06].configure(Some(A)); // RTS3        --  USART3 RTS
     PB[07].configure(None); //... NRF RESET   --  GPIO
     PB[09].configure(Some(A)); // RX3         --  USART3 RX
@@ -131,7 +231,7 @@ unsafe fn set_pin_primary_functions() {
     PB[14].configure(Some(A)); // RX0         --  USART0 RX
     PB[15].configure(Some(A)); // TX0         --  USART0 TX
     PC[00].configure(Some(A)); // CS2         --  SPI NPCS2
-    PC[01].configure(Some(A)); // CS3 (RF233) -- SPI NPCS3
+    PC[01].configure(Some(A)); // CS3 (RF233) --  SPI NPCS3
     PC[02].configure(Some(A)); // CS1         --  SPI NPCS1
     PC[03].configure(Some(A)); // CS0         --  SPI NPCS0
     PC[04].configure(Some(A)); // MISO        --  SPI MISO
@@ -149,8 +249,9 @@ unsafe fn set_pin_primary_functions() {
     PC[17].configure(None); //... NRF_PWR     --  GPIO pin
     PC[18].configure(None); //... RF233_PWR   --  GPIO pin
     PC[19].configure(None); //... TRNG_PWR    -- GPIO Pin
+    PC[22].configure(None); //... KERNEL LED  -- GPIO Pin
     PC[24].configure(None); //... USER_BTN    -- GPIO Pin
-    PC[25].configure(None); //... D8          -- GPIO Pin
+    PC[25].configure(Some(B)); // LI_INT      --  EIC EXTINT2
     PC[26].configure(None); //... D7          -- GPIO Pin
     PC[27].configure(None); //... D6          -- GPIO Pin
     PC[28].configure(None); //... D5          -- GPIO Pin
@@ -159,11 +260,14 @@ unsafe fn set_pin_primary_functions() {
     PC[31].configure(None); //... D2          -- GPIO Pin
 }
 
+
+
 #[no_mangle]
 pub unsafe fn reset_handler() {
     sam4l::init();
 
-    sam4l::pm::setup_system_clock(sam4l::pm::SystemClockSource::DfllRc32k, 48000000);
+    sam4l::pm::setup_system_clock(sam4l::pm::SystemClockSource::ExternalOscillatorPll,
+                                 48000000);
 
     // Source 32Khz and 1Khz clocks from RC23K (SAM4L Datasheet 11.6.8)
     sam4l::bpm::set_ck32source(sam4l::bpm::CK32Source::RC32K);
@@ -304,10 +408,6 @@ pub unsafe fn reset_handler() {
     fx0_i2c.set_client(fx0);
     fx0_virtual_alarm.set_client(fx0);
 
-    // Clear sensors enable pin to enable sensor rail
-    // sam4l::gpio::PC[16].enable_output();
-    // sam4l::gpio::PC[16].clear();
-
     // # ADC
 
     // Setup ADC
@@ -327,8 +427,9 @@ pub unsafe fn reset_handler() {
          &sam4l::gpio::PC[28], // P5
          &sam4l::gpio::PC[27], // P6
          &sam4l::gpio::PC[26], // P7
-         &sam4l::gpio::PC[25], // P8
-         &sam4l::gpio::PC[25]], // Dummy Pin (regular GPIO)
+         &sam4l::gpio::PA[20], // P8
+         &sam4l::gpio::PA[20], // Dummy Pin (regular GPIO)
+         ],
         8 * 4
     );
 
@@ -342,9 +443,11 @@ pub unsafe fn reset_handler() {
 
     // # LEDs
     let led_pins = static_init!(
-        [(&'static sam4l::gpio::GPIOPin, capsules::led::ActivationMode); 1],
-        [(&sam4l::gpio::PC[10], capsules::led::ActivationMode::ActiveHigh)],
-        64/8);
+        [(&'static sam4l::gpio::GPIOPin, capsules::led::ActivationMode); 2],
+        [(&sam4l::gpio::PC[22], capsules::led::ActivationMode::ActiveHigh),
+         (&sam4l::gpio::PC[10], capsules::led::ActivationMode::ActiveHigh)
+        ],
+        128/8);
     let led = static_init!(
         capsules::led::LED<'static, sam4l::gpio::GPIOPin>,
         capsules::led::LED::new(led_pins),
@@ -410,9 +513,17 @@ pub unsafe fn reset_handler() {
     //    rf233.config_commit();
 
     rf233.start();
-
+ //////////////////////////////////////////////////////////   
+        const B:u16=4;
+const B_bar:u16=11;
+const two_pow_B:u16=16;
+const two_pow_B_bar:u16=2048;
+const q:u16=32768;
+    test_frodo();
+    println!("hello~~");
     debug!("Initialization complete. Entering main loop");
     kernel::main(&imix, &mut chip, load_processes(), &imix.ipc);
+    
 }
 
 unsafe fn load_processes() -> &'static mut [Option<kernel::process::Process<'static>>] {

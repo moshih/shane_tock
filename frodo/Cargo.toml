@@ -1,0 +1,13 @@
+[package]
+name = "frodo"
+version = "0.1.0"
+authors = ["Tock Project Developers <tock-dev@googlegroups.com>"]
+
+
+
+[dependencies]
+sam4l = { path = "../chips/sam4l" }
+rust-libcore = "*"
+
+[build-dependencies]
+
